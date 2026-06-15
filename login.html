@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - BPDAS Bone Limboto</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #0b1020, #11172b);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+    }
+
+    .box {
+      background: #11172b;
+      padding: 30px;
+      border-radius: 12px;
+      width: 320px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+
+    h2 {
+      margin-bottom: 20px;
+      color: #2ecc71;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border: 1px solid #2ecc71;
+      border-radius: 8px;
+      background: #0f1730;
+      color: #fff;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      background: #2ecc71;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #27ae60;
+    }
+
+    .footer {
+      margin-top: 15px;
+      font-size: 12px;
+      color: #aaa;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="box">
+  <h2>LOGIN SISTEM</h2>
+
+  <input id="user" type="text" placeholder="Username">
+  <input id="pass" type="password" placeholder="Password">
+
+  <button onclick="login()">LOGIN</button>
+
+  <div class="footer">
+    BPDAS Bone Limboto
+  </div>
+</div>
+
+<script>
+function login() {
+  const user = document.getElementById("user").value;
+  const pass = document.getElementById("pass").value;
+
+  // LOGIN SEDERHANA (bisa kamu ubah nanti)
+  if (user === "admin" && pass === "1234") {
+
+    // session login
+    sessionStorage.setItem("auth", "1");
+
+    // masuk ke web utama
+    window.location.href = "index.html";
+
+  } else {
+    alert("Username atau password salah!");
+  }
+}
+
+// kalau sudah login, langsung lempar ke index
+if (sessionStorage.getItem("auth") === "1") {
+  window.location.href = "index.html";
+}
+</script>
+
+</body>
+</html>
