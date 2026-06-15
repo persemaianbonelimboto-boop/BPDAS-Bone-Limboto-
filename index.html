@@ -271,6 +271,13 @@ button.showgeom:disabled{opacity:.35;cursor:not-allowed}
   <main id="map"><div id="watermark">BPDAS BONE LIMBOTO</div></main>
 </div>
 
+  <script>
+function logout() {
+  sessionStorage.removeItem("auth");
+  window.location.href = "login.html";
+}
+</script>
+  
 <script>
 /* ==========================
    ANTI-DUPLIKASI
