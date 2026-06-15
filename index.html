@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WebGIS Lahan — BPDAS Bone Limboto</title>
+
+<!-- Paksa Leaflet gunakan Canvas (stabil di Firefox) -->
+<script>window.L_PREFER_CANVAS = true;</script>
+
+<!-- Leaflet & Draw -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+<!-- Geocoder -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+<!-- Turf.js (luas/centroid/simplify/pointInPolygon) -->
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+<!-- shpjs (opsional: memuat shapefile .zip di browser) -->
+<script src="https://unpkg.com/shpjs@latest/dist/shp.min.js"></script>
+
+<style>
+:root{--bg:#0b1020;--panel:#11172b;--muted:#9fb3c8;--brand:#2ecc71;
+--input-bg:#0f1730;--input-bg2:#0c1326;--input-hover:#142042}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#e6eef7;font-family:system-ui,Segoe UI,Roboto,Ubuntu,Arial}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid #22304a}
+header img{height:46px}
+header h1{margin:0;font-size:20px;font-weight:800}
+.pill{padding:4px 8px;border:1px solid #214;border-radius:999px;background:#0e1730}
+#app{display:grid;grid-template-columns:440px 1fr;height:calc(100vh - 70px)}
+#left{background:var(--panel);overflow:auto;border-right:1px solid #22304a}
+#map{height:100%}
+.section{padding:12px 14px;border-bottom:1px solid #22304a}
+h3{
+  margin:0 0 8px;
+  color:#f1c40f;                  /* warna teks judul */
+  font-family: "Verdana", Arial, sans-serif;  /* jenis huruf */
+  font-size: 17px;                /* ukuran huruf */
+  font-weight: 800;               /* ketebalan */
+  text-transform: uppercase;      /* opsional: semua huruf kapital */
+  letter-spacing: .5px;           /* opsional: jarak antar huruf */
+}
+.field{display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:10px}
+.field>label{font-size:12px;color:var(--muted)}
+input,select,textarea{
+  width:100%;padding:8px 10px;border:1px solid #2ecc71;border-radius:10px;
+  background:linear-gradient(180deg,var(--input-bg),var(--input-bg2));color:#e6eef7}
+input:hover,select:hover,textarea:hover{border-color:#58d68d;background:linear-gradient(180deg,var(--input-hover),var(--input-bg2))}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#2ecc71;box-shadow:0 0 0 3px rgba(46,204,113,.25)}
+input[readonly]{opacity:.9;background:linear-gradient(180deg,#0d1529,#0b1224);border-style:dashed}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+button{padding:9px 12px;border:1px solid #2a3b5e;border-radius:10px;background:#0c1326;color:#e6eef7;cursor:pointer}
+button.primary{background:var(--brand);color:#0b1020;font-weight:700;border:none}
+button.ghost{background:#0c1326;border:1px dashed #2a3b5e}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th,td{padding:6px 8px;border-bottom:1px solid #22304a;font-size:12px;vertical-align:top}
+th:first-child,td:first-child{width:34px;text-align:center}
+.leaflet-top,.leaflet-bottom,.leaflet-control,.leaflet-draw,.leaflet-bar,.leaflet-control-geocoder{z-index:10020!important}
+#watermark{position:absolute;bottom:10px;right:10px;font-size:12px;background:#0b1020cc;padding:4px 8px;border-radius:4px;pointer-events:none}
+.smallmuted{font-size:11px;color:#9fb3c8}
+
+/* Toolbar Draw selalu tampak */
+.leaflet-top .leaflet-draw { z-index: 10050 !important; }
+.leaflet-draw-toolbar a { width: 28px; height: 28px; line-height: 28px; }
+.leaflet-top.leaflet-left { margin-top: 8px; margin-left: 8px; }
+
+/* Dropdown Kab/Kec hijau (tetap) */
+#kab, #kec { color:lab(95.27% -0.99 -0.36); font-weight:600; }
+#kab option, #kec option { color:hsl(0, 0%, 0%); background-color:#ecedf0; }
+
+/* Dropdown Jenis Penanaman: putih, teks hitam, panah hitam */
+#jenisPenanaman {
+  color:#ece6e6c9 !important;
+  background:hsla(0, 30%, 4%, 0) !important;
+  appearance:none; -webkit-appearance:none; -moz-appearance:none;
+  padding-right:24px;
+  background-image:url("data:image/svg+xml;utf8,<svg fill='black' height='16' viewBox='0 0 24 24' width='16' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>");
+  background-repeat:no-repeat; background-position:right 8px center; background-size:8px;
+  border:1px solid #2ecc71; border-radius:10px;
+}
+#jenisPenanaman option { color:hsl(0, 0%, 100%) !important; background:#080808 !important; }
+
+/* Tombol kecil di kolom peta & aksi */
+button.showgeom{padding:4px 8px;border-radius:8px;border:1px solid #2ecc71;background:#112233;cursor:pointer}
+button.showgeom:hover{background:#15304a}
+button.rowdel{padding:4px 8px;border-radius:8px;border:1px solid #a33;background:#2a1212}
+button.rowedit{padding:4px 8px;border-radius:8px;border:1px solid #2a3b5e;background:#102238}
+button.showgeom:disabled{opacity:.35;cursor:not-allowed}
+
+/* Filter dan badge edit */
+#filterWrap{display:flex;gap:6px;align-items:center;margin-top:6px}
+#filter{flex:1}
+#editBadge{display:none;margin-left:auto;font-size:12px;color:#0b1020;background:#f1c40f;padding:2px 8px;border-radius:999px;font-weight:700}
+.editing #editBadge{display:inline-block}
+
+/* ==== Popup/Tooltip: kartu rapi ==== */
+.rec-card{
+  background:#0f1730;border:1px solid #2a3b5e;border-radius:10px;
+  padding:10px 12px;color:#e6eef7;box-shadow:0 6px 16px rgba(0,0,0,.35);max-width:320px}
+.rec-card h4{margin:6px 0 6px;font-size:13px;color:#f1c40f;letter-spacing:.3px}
+.rec-section{ margin-bottom:8px; }
+.kv{ display:grid; grid-template-columns:120px 1fr; gap:4px 8px; }
+.kv div{ font-size:12px; line-height:1.25; }
+.kv .k{ color:#9fb3c8; }
+.kv .v{ color:#e6eef7; }
+.taglist{ display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.tag{ font-size:12px; padding:2px 6px; border:1px solid #2a3b5e; border-radius:999px; background:#0b1224; }
+
+/* Leaflet popup skin */
+.leaflet-popup-content { color:#e6eef7; font-size:12px; }
+.leaflet-popup-content-wrapper{background:#11172b;border:1px solid #2a3b5e;border-radius:12px}
+.leaflet-popup-tip{ background:#11172b; }
+
+/* Tooltip sticky memakai kartu yang sama */
+.leaflet-tooltip.rec-tip{background:transparent;border:none;padding:0}
+
+/* Label desa terbaca di citra: putih + halo hitam */
+.desa-label{
+  font: 700 12px/1.2 system-ui,Segoe UI,Roboto,Ubuntu,Arial;
+  color:#fff; text-shadow:0 1px 2px #000, 0 0 4px #000, 0 0 8px rgba(0,0,0,.6);
+  background: rgba(0,0,0,.20); padding:2px 6px; border-radius:999px; pointer-events:none;
+}
+
+/* Brandname SI-BIBIT kuning tebal */
+.brandname{font-weight:900;color:hsl(56, 100%, 50%);margin-left:10px;font-size:10px;text-shadow:0 0 4px hwb(0 100% 0% / 0.445);}
+
+/* Upload UI */
+#uploadShp,#uploadGeoJSON{background:#0c1326;border:1px dashed #2a3b5e;padding:8px;border-radius:10px}
+</style>
+</head>
+<body>
+<header>
+  <img src="klhk_logo.png" alt="" onerror="this.style.display='none'">
+  <h1>BPDAS BONE LIMBOTO</h1>
+<h1 style="font-family: Verdana; font-size: 10px; color: #eceef1;">
+</h1>
+  <span class="brandname">SI-BIBIT</span>
+  <p style="font-family:'Times New Roman', Times, serif rgb(137, 18, 18); font-size: 25px; font-weight: bold; color: #6e0a0a;font-style;">
+   SISTEM INFORMASI-BIBIT BERKWALITAS DAN REHABILITASI
+</p>
+  <span id="editBadge">MODE EDIT</span>
+</header>
+
+<div id="app">
+  <aside id="left">
+    <form class="section" id="form" onsubmit="return false;">
+      <h3>DATA PEMOHON</h3>
+      
+      <div class="field"><label title="Nomor otomatis berurutan per tahun">No (otomatis)</label><input id="no" readonly></div>
+      <div class="field"><label>Tanggal</label><input id="tanggal" type="date" required title="Tanggal permohonan"></div>
+      <div class="field"><label>Tahun</label><input id="tahun" readonly></div>
+      <div class="field"><label>Nama Pemohon</label><input id="namaPemohon" placeholder="Nama lengkap" required title="Isi nama lengkap pemohon"></div>
+
+      <div class="field"><label>Jenis Penanaman</label>
+        <select id="jenisPenanaman" title="Jenis penanaman (Perseorangan/Instansi/LSM, dll.)">
+          <option>Perseorangan</option><option>Seremonial</option>
+          <option>Kelompok Tani Masyarakat</option><option>Kelompok Tani RHL</option>
+          <option>Instansi Pemerintah</option><option>Swasta</option>
+          <option>PTN</option><option>PTS</option><option>LSM</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>No KTP</label>
+        <input id="noKtp" placeholder="16–18 digit NIK" inputmode="numeric" autocomplete="off"
+               minlength="16" maxlength="18" pattern="\d{16,18}" title="Masukkan 16–18 digit angka">
+      </div>
+
+      <div class="field"><label>No HP</label><input id="noHp" type="tel" placeholder="08xxxx" title="Nomor HP dapat diawali 0"></div>
+      <div class="field"><label>Alamat</label><textarea id="alamat" rows="2" placeholder="Alamat lengkap"></textarea></div>
+
+      <div class="field"><label>Provinsi</label><select id="provinsi" title="Akan terisi otomatis jika batas desa dimuat"></select></div>
+      <div class="field"><label>Kabupaten/Kota</label><select id="kab"></select></div>
+      <div class="field"><label>Kecamatan</label><select id="kec"></select></div>
+      <div class="field"><label>Desa/Kelurahan</label><input id="desa" placeholder="Akan terisi otomatis jika data batas desa dimuat"></div>
+
+      <h3>KOORDINAT</h3>
+      <div class="field"><label>Longitude</label><input id="lng" readonly></div>
+      <div class="field"><label>Latitude</label><input id="lat" readonly></div>
+      <div class="field"><label>X UTM <span id="utmZoneLabel">—</span></label><input id="xutm" readonly></div>
+      <div class="field"><label>Y UTM</label><input id="yutm" readonly></div>
+      <div class="field"><label>Luas (Ha)</label><input id="luas" readonly></div>
+
+      <h3>BIBIT</h3>
+      <div class="field">
+        <label>Jenis Bibit</label>
+        <input id="jenisBibit" placeholder="Durian, Mangga, dll." title="Jenis bibit">
+      </div>
+      <div class="field">
+        <label>Jumlah</label>
+        <input id="jumlahBibit" type="number" value="100" min="1" title="Jumlah bibit">
+      </div>
+      <div class="field">
+        <label>No Berita Acara</label>
+        <input id="noba" placeholder="Contoh: 123/BA/RHL-BL/IX/2025" title="Nomor Berita Acara">
+      </div>
+
+      <div class="btns">
+        <button type="button" id="addBibit" title="Tambahkan baris bibit ke daftar">Tambah Bibit</button>
+        <button type="button" id="clearBibit" title="Kosongkan daftar bibit">Kosongkan</button>
+      </div>
+      <table title="Daftar bibit yang akan disimpan">
+        <thead><tr><th>Jenis</th><th>Jumlah</th><th>Aksi</th></tr></thead>
+        <tbody id="tbBibit"></tbody>
+      </table>
+
+      <div class="btns">
+        <button type="button" class="primary" id="save" title="Simpan data + geometri ke rekap">Simpan ke Rekap</button>
+        <button type="button" class="ghost" id="cancelEdit" style="display:none" title="Batalkan mode edit">Batal Edit</button>
+        <button type="button" id="resetForm" title="Reset form untuk entri baru">Reset Form</button>
+      </div>
+    </form>
+
+    <div class="section">
+      <h3>Data Wilayah (Batas Desa)</h3>
+      <div class="field">
+        <label>Muat batas desa (pilih salah satu)</label>
+        <input type="file" id="uploadShp" accept=".zip" title="Unggah shapefile .zip (shp+dbf+prj)">
+        <input type="file" id="uploadGeoJSON" accept=".geojson,.json" title="Unggah GeoJSON">
+        <div class="smallmuted">Saran: gunakan GeoJSON EPSG:4326, RFC 7946, koordinat presisi 6.</div>
+      </div>
+      <div class="field">
+        <label>Cari Desa</label>
+        <input id="cariDesa" list="daftarDesa" placeholder="Ketik nama desa/kelurahan lalu Enter">
+        <datalist id="daftarDesa"></datalist>
+      </div>
+      <div class="smallmuted">Nama desa juga tampil sebagai label di peta (zoom ≥ 11). Klik peta / selesai gambar akan mengisi admin otomatis.</div>
+    </div>
+
+    <div class="section">
+      <h3>Rekap Data</h3>
+      <div id="filterWrap">
+        <input id="filter" placeholder="Cari: Nama / No / No BA / Desa / Kab / Kec / Tanggal (YYYY-MM-DD)" title="Filter cepat tabel rekap">
+        <span id="selInfo" class="smallmuted">0 baris dipilih</span>
+      </div>
+      <div class="btns" style="justify-content:flex-end">
+        <button id="exportGeoJSON" title="Unduh geometri rekap sebagai GeoJSON">Unduh GeoJSON</button>
+        <button id="clearMap" title="Bersihkan layer gambar sementara">Bersihkan Peta</button>
+        <button id="exportCSV" title="Unduh rekap sebagai CSV (Excel)">Unduh Excel (CSV)</button>
+        <button id="deleteSelected" disabled title="Hapus baris yang dipilih">Hapus Dipilih</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="chkAll" title="Pilih semua baris yang terlihat"></th>
+            <th>Peta</th>
+            <th>No</th><th>Tanggal</th><th>Nama</th><th>No KTP</th><th>No HP</th>
+            <th>Alamat</th><th>Jenis</th><th>Prov</th><th>Kab</th><th>Kec</th><th>Desa</th>
+            <th>Lng</th><th>Lat</th><th>X</th><th>Y</th><th>Luas</th><th>No BA</th><th>Bibit</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tbRekap"></tbody>
+      </table>
+    </div>
+  </aside>
+
+  <main id="map"><div id="watermark">BPDAS BONE LIMBOTO</div></main>
+</div>
+
+<script>
+/* ==========================
+   ANTI-DUPLIKASI
+   ========================== */
+(function(){
+  const headers = document.querySelectorAll('header');
+  for (let i=1;i<headers.length;i++) headers[i].remove();
+  const apps = document.querySelectorAll('#app');
+  for (let i=1;i<apps.length;i++) apps[i].remove();
+})();
+
+/* ==========================
+   PETA & BASEMAP
+   ========================== */
+const map = L.map('map', { renderer: L.canvas(), tap:false, zoomControl:true }).setView([-0.5,120],6);
+const osm  = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+const hot  = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',{attribution:'© OSM/HOT',maxZoom:19});
+const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:19});
+let fallback=false; osm.once('tileerror',()=>{ if(fallback) return; fallback=true; hot.addTo(map).once('tileerror',()=>{ esri.addTo(map); }); });
+
+/* Layer control (base + overlay) */
+const layerCtrl = L.control.layers({"OSM":osm,"OSM HOT":hot,"Citra Satelit":esri}, {}).addTo(map);
+
+/* Overlay label referensi Esri (di atas citra satelit) */
+const esriRef = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { attribution:'© Esri' }
+).addTo(map);
+layerCtrl.addOverlay(esriRef, 'Label Referensi (Esri)');
+
+/* Geocoder ke kanan atas agar tidak menutupi Draw toolbar */
+L.Control.geocoder({defaultMarkGeocode:true, position:'topright'}).addTo(map);
+
+/* Layer gambar sementara & data tersimpan */
+const drawnItems = new L.FeatureGroup();  // sementara (saat digitasi)
+map.addLayer(drawnItems);
+const savedGroup = L.featureGroup().addTo(map);   // data rekap yang sudah tersimpan
+const recordLayers = new Map();                   // id -> layer group di peta
+
+/* Control Draw disimpan di variabel + fungsi penjaga */
+let drawControl = new L.Control.Draw({
+  draw: { polygon:true, marker:true, polyline:false, rectangle:false, circle:false },
+  edit: { featureGroup: drawnItems }
+});
+map.addControl(drawControl);
+function ensureDrawToolbar(){
+  const hasToolbar = !!document.querySelector('.leaflet-draw');
+  if(!hasToolbar){
+    try{ map.removeControl(drawControl); }catch(_){}
+    drawControl = new L.Control.Draw({
+      draw: { polygon:true, marker:true, polyline:false, rectangle:false, circle:false },
+      edit: { featureGroup: drawnItems }
+    });
+    map.addControl(drawControl);
+  }
+}
+setTimeout(ensureDrawToolbar, 200);
+setTimeout(ensureDrawToolbar, 800);
+map.whenReady(()=>setTimeout(()=>{ try{ map.invalidateSize(); }catch(_){} ensureDrawToolbar(); },150));
+
+/* ==========================
+   WGS84 -> UTM (zona otomatis)
+   ========================== */
+const A=6378137, F_INV=298.257223563, F=1/F_INV, E2=F*(2-F), EP2=E2/(1-E2), K0=0.9996;
+const utmZone = lon => Math.floor((lon + 180)/6) + 1; // 1..60
+const lon0Rad = z => (z*6 - 183) * Math.PI/180;
+
+function wgs84ToUTM(latDeg, lonDeg, zone){
+  const phi = latDeg*Math.PI/180, lam = lonDeg*Math.PI/180, lam0 = lon0Rad(zone);
+  const sinP=Math.sin(phi), cosP=Math.cos(phi), tanP=Math.tan(phi);
+  const N = A/Math.sqrt(1 - E2*sinP*sinP);
+  const T = tanP*tanP, C = EP2*cosP*cosP, Abar=(lam-lam0)*cosP;
+
+  const e4=E2*E2, e6=e4*E2;
+  const M = A*((1-E2/4-3*e4/64-5*e6/256)*phi
+          -(3*E2/8+3*e4/32+45*e6/1024)*Math.sin(2*phi)
+          +(15*e4/256+45*e6/1024)*Math.sin(4*phi)
+          -(35*e6/3072)*Math.sin(6*phi));
+
+  const x = K0*N*( Abar + (1-T+C)*Math.pow(Abar,3)/6 + (5-18*T+T*T+72*C-58*EP2)*Math.pow(Abar,5)/120 ) + 500000;
+  let   y = K0*( M + N*tanP*( Math.pow(Abar,2)/2 + (5-T+9*C+4*C*C)*Math.pow(Abar,4)/24 + (61-58*T+T*T+600*C-330*EP2)*Math.pow(Abar,6)/720 ) );
+  if(latDeg < 0) y += 10000000; // false northing selatan
+  return [x,y];
+}
+
+const utmZoneLabel = document.getElementById('utmZoneLabel');
+function setFromLatLng(lat,lng){
+  const zone = utmZone(lng), hemi = (lat>=0)?'N':'S';
+  if(utmZoneLabel) utmZoneLabel.textContent = `${zone}${hemi}`;
+  document.getElementById('lat').value = (+lat).toFixed(6);
+  document.getElementById('lng').value = (+lng).toFixed(6);
+  const [x,y] = wgs84ToUTM(+lat,+lng,zone);
+  document.getElementById('xutm').value = x.toFixed(2);
+  document.getElementById('yutm').value = y.toFixed(2);
+}
+
+/* ==========================
+   LUAS & centroid (Turf)
+   ========================== */
+function updateAreaAndCenterFromLayer(layer){
+  try{
+    const gj = layer.toGeoJSON();
+    if (gj.geometry && (gj.geometry.type === 'Polygon' || gj.geometry.type === 'MultiPolygon')) {
+      const ha = turf.area(gj) / 10000; // m2 -> ha
+      document.getElementById('luas').value = ha.toFixed(4);
+      const cen = turf.centerOfMass(gj);
+      if (cen && cen.geometry && cen.geometry.coordinates) {
+        const [lon, lat] = cen.geometry.coordinates;
+        setFromLatLng(lat, lon);
+        autofillAdminFromPoint(lat, lon); // ← isi admin otomatis dari centroid polygon
+      }
+    } else if (gj.geometry && gj.geometry.type === 'Point') {  // ← FIX: hilangkan kurung lebih
+      const [lon, lat] = gj.geometry.coordinates;
+      setFromLatLng(lat, lon);
+      autofillAdminFromPoint(lat, lon);   // ← isi admin otomatis dari point
+    }
+  }catch(err){ console.warn('Gagal hitung luas/centroid:', err); }
+}
+
+/* Klik peta → isi koordinat + admin */
+map.on('click',e=>{
+  setFromLatLng(e.latlng.lat,e.latlng.lng);
+  autofillAdminFromPoint(e.latlng.lat,e.latlng.lng);
+});
+
+/* ==========================
+   Data Wilayah (ADM statis dropdown)
+   ========================== */
+const ADM = {"Gorontalo":{"Boalemo":{"Botumoito":{},"Dulupi":{},"Mananggu":{},"Paguyaman":{},"Paguyaman Pantai":{},"Tilamuta":{},"Wonosari":{}},"Bone Bolango":{"Bone":{},"Bone Raya":{},"Bonepantai":{},"Bulango Selatan":{},"Bulango Timur":{},"Bulango Ulu":{},"Bulango Utara":{},"Bulawa":{},"Kabila":{},"Kabila Bone":{},"Pinogu":{},"Suwawa":{},"Suwawa Selatan":{},"Suwawa Tengah":{},"Suwawa Timur":{},"Tapa":{},"Tilongkabila":{}},"Gorontalo":{"Asparaga":{},"Batudaa":{},"Batudaa Pantai":{},"Bilato":{},"Boliyohuto":{},"Bongomeme":{},"Dungaliyo":{},"Limboto":{},"Limboto Barat":{},"Mootilango":{},"Pulubala":{},"Tabongo":{},"Telaga":{},"Telaga Biru":{},"Telaga Jaya":{},"Tibawa":{},"Tilango":{}},"Gorontalo Utara":{"Anggrek":{},"Atinggola":{},"Biau":{},"Gentuma Raya":{},"Kwandang":{},"Monano":{},"Ponelo Kepulauan":{},"Sumalata":{},"Sumalata Timur":{},"Tolinggula":{},"Tomilito":{}},"Pohuwato":{"Buntulia":{},"Dengilo":{},"Duhiadaa":{},"Lemito":{},"Marisa":{},"Paguat":{},"Patilanggio":{},"Popayato":{},"Popayato Barat":{},"Popayato Timur":{},"Randangan":{},"Taluditi":{},"Wanggarasi":{}},"Kota Gorontalo":{"Dungingi":{},"Dumbo Raya":{},"Hulonthalangi":{},"Kota Barat":{},"Kota Selatan":{},"Kota Tengah":{},"Kota Timur":{},"Kota Utara":{},"Sipatana":{}}}};
+const provSel=document.getElementById('provinsi');
+const kabSel=document.getElementById('kab');
+const kecSel=document.getElementById('kec');
+function fill(sel,arr){ sel.innerHTML=(arr||[]).map(v=>`<option>${v}</option>`).join(''); }
+function initWilayah(){
+  fill(provSel,Object.keys(ADM));
+  function updateKab(){ fill(kabSel,Object.keys(ADM[provSel.value]||{})); updateKec(); }
+  function updateKec(){ fill(kecSel,Object.keys((ADM[provSel.value]||{})[kabSel.value]||{})); }
+  provSel.onchange=updateKab; kabSel.onchange=updateKec; updateKab();
+}
+document.addEventListener('DOMContentLoaded', initWilayah);
+
+/* ==========================
+   Rekap localStorage + Geometri
+   ========================== */
+const $=id=>document.getElementById(id);
+const STORAGE='rekap_lahan';
+const rekap=JSON.parse(localStorage.getItem(STORAGE)||'[]');
+const selectedIds=new Set();
+let rekapBibit=[];
+let editId=null;   // mode edit
+
+function persist(){ localStorage.setItem(STORAGE, JSON.stringify(rekap)); }
+function formatNo(y,n){ return `${y}-${String(n).padStart(4,'0')}`; }
+function nextNo(){
+  const y=new Date().getFullYear();
+  const last=(rekap||[]).filter(r=>(r.no||'').startsWith(y+'-'))
+    .map(r=>+((r.no||'').split('-')[1]||0)).sort((a,b)=>b-a)[0]||0;
+  return formatNo(y,last+1);
+}
+function setDefaults(){
+  const d=new Date();
+  if(!$('no').value) $('no').value=nextNo();
+  if(!$('tahun').value) $('tahun').value=d.getFullYear();
+  if(!$('tanggal').value) $('tanggal').value=d.toISOString().slice(0,10);
+}
+document.addEventListener('DOMContentLoaded', setDefaults);
+
+/* Batasi No KTP hanya angka, maksimal 18 digit */
+document.addEventListener('DOMContentLoaded', ()=>{
+  const ktpEl = document.getElementById('noKtp');
+  if (ktpEl) {
+    ktpEl.addEventListener('input', () => {
+      ktpEl.value = ktpEl.value.replace(/\D/g, '').slice(0, 18);
+    });
+  }
+});
+
+/* ===== Helper UI Popup/Tooltip (kartu) ===== */
+function esc(x){ return String(x ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
+function bibitHTML(arr){
+  const a = Array.isArray(arr) ? arr : [];
+  if(!a.length) return '<div class="v">-</div>';
+  return `<div class="taglist">` + a.map(b=>`<span class="tag">${esc(b.jenis)}: ${esc(b.jumlah)}</span>`).join('') + `</div>`;
+}
+function formatRecCardHTML(r){
+  const alamat = [r.desa, r.kec, r.kab, r.prov].filter(Boolean).join(', ');
+  return `
+  <div class="rec-card">
+    <div class="rec-section">
+      <h4>Data Pemohon</h4>
+      <div class="kv">
+        <div class="k">No / Tanggal</div> <div class="v">${esc(r.no)} / ${esc(r.tanggal)}</div>
+        <div class="k">Nama</div>          <div class="v">${esc(r.nama||'-')}</div>
+        <div class="k">Jenis</div>         <div class="v">${esc(r.jenis||'-')}</div>
+        <div class="k">No KTP</div>        <div class="v">${esc(r.noKtp||'-')}</div>
+        <div class="k">No HP</div>         <div class="v">${esc(r.noHp||'-')}</div>
+        <div class="k">No BA</div>         <div class="v">${esc(r.noba||'-')}</div>
+        <div class="k">Alamat</div>        <div class="v">${esc(alamat||'-')}</div>
+      </div>
+    </div>
+
+    <div class="rec-section">
+      <h4>Koordinat</h4>
+      <div class="kv">
+        <div class="k">Longitude</div> <div class="v">${esc(r.lng||'-')}</div>
+        <div class="k">Latitude</div>  <div class="v">${esc(r.lat||'-')}</div>
+        <div class="k">UTM X</div>     <div class="v">${esc(r.xutm||'-')}</div>
+        <div class="k">UTM Y</div>     <div class="v">${esc(r.yutm||'-')}</div>
+        <div class="k">Luas (Ha)</div> <div class="v">${esc(r.luas||'-')}</div>
+      </div>
+    </div>
+
+    <div class="rec-section">
+      <h4>Bibit</h4>
+      ${bibitHTML(r.bibit)}
+    </div>
+  </div>`;
+}
+function formatCurrentFormCardHTML(){
+  const r = {
+    no: $('no').value, tanggal:$('tanggal').value, tahun:$('tahun').value,
+    nama:$('namaPemohon').value, jenis:$('jenisPenanaman').value,
+    noKtp:$('noKtp').value, noHp:$('noHp').value, alamat:$('alamat').value,
+    prov:provSel.value, kab:kabSel.value, kec:kecSel.value, desa:$('desa').value,
+    lng:$('lng').value, lat:$('lat').value, xutm:$('xutm').value, yutm:$('yutm').value,
+    luas:$('luas').value, noba:$('noba').value, bibit:[...rekapBibit]
+  };
+  return formatRecCardHTML(r);
+}
+
+/* Ambil geometri yang sedang digambar */
+function captureGeometry() {
+  if (!drawnItems || drawnItems.getLayers().length === 0) return null;
+  const fc = drawnItems.toGeoJSON();
+  try {
+    const simplified = {
+      type: 'FeatureCollection',
+      features: fc.features.map(f => {
+        if (f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')) {
+          return turf.simplify(f, {tolerance: 0.00005, highQuality: false});
+        }
+        return f;
+      })
+    };
+    return simplified;
+  } catch { return fc; }
+}
+
+/* ====== Render data tersimpan ke peta ====== */
+function addRecordLayer(rec){
+  if(!rec || !rec.geom || !rec.geom.features || !rec.geom.features.length) return null;
+  const layer = L.geoJSON(rec.geom, {
+    style: { color:'#2ecc71', weight:2, fillOpacity:0.2 },
+    pointToLayer: (f, latlng) => L.marker(latlng)
+  });
+  const html = formatRecCardHTML(rec);
+  layer.eachLayer(l => {
+    try{
+      l.bindTooltip(html, {sticky:true, direction:'top', opacity:1, className:'rec-tip'});
+      l.bindPopup(html, {autoPan:true});
+    }catch(_){}
+  });
+  savedGroup.addLayer(layer);
+  recordLayers.set(String(rec.id), layer);
+  return layer;
+}
+function renderSavedFromRekap({onlyFiltered=true, fit=false}={}){
+  savedGroup.clearLayers();
+  recordLayers.clear();
+  const list = onlyFiltered ? getVisibleRekap() : rekap;
+  let bounds = null;
+  list.forEach(r=>{
+    const g = addRecordLayer(r);
+    if(g){
+      try{ bounds = bounds ? bounds.extend(g.getBounds()) : g.getBounds(); }catch(_){}
+    }
+  });
+  if(fit && bounds){
+    try{ map.fitBounds(bounds, {padding:[20,20]}); }catch(_){}
+  }
+}
+function focusRecordOnMap(id){
+  const grp = recordLayers.get(String(id));
+  if(!grp) return;
+  try{ map.fitBounds(grp.getBounds(), {padding:[20,20]}); }catch(_){}
+  try{ grp.eachLayer(l => l.openPopup && l.openPopup()); }catch(_){}
+}
+
+/* ==========================
+   DRAW events (popup kartu dari FORM)
+   ========================== */
+map.on(L.Draw.Event.CREATED, e=>{
+  const layer=e.layer; 
+  drawnItems.addLayer(layer);
+
+  setTimeout(()=>updateAreaAndCenterFromLayer(layer),0);
+
+  try{
+    const html = formatCurrentFormCardHTML();
+    layer.bindPopup(html, {autoPan:true});
+    layer.on('click', ()=> {
+      const refreshed = formatCurrentFormCardHTML();
+      try{ layer.setPopupContent(refreshed).openPopup(); }catch(_){}
+    });
+    layer.bindTooltip(html, {sticky:true, direction:'top', opacity:1, className:'rec-tip'});
+  }catch(_){}
+
+  if (layer instanceof L.Polygon) layer.on('click',()=>updateAreaAndCenterFromLayer(layer));
+  ensureDrawToolbar();
+});
+map.on(L.Draw.Event.EDITED, e=>{
+  e.layers.eachLayer(layer=> {
+    setTimeout(()=>updateAreaAndCenterFromLayer(layer),0);
+    if (layer.getPopup){
+      const refreshed = formatCurrentFormCardHTML();
+      try{ layer.setPopupContent(refreshed); }catch(_){}
+    }
+  });
+  ensureDrawToolbar();
+});
+map.on(L.Draw.Event.DELETED, ()=>{
+  let adaPoly=false; drawnItems.eachLayer(l=>{ if(l instanceof L.Polygon) adaPoly=true; });
+  if(!adaPoly) document.getElementById('luas').value='';
+  ensureDrawToolbar();
+});
+setTimeout(()=>{ try{ map.invalidateSize(); }catch(_){} ensureDrawToolbar(); }, 200);
+
+/* ==========================
+   FILTER REKAP
+   ========================== */
+const filterInput = $('filter');
+let filterText = '';
+filterInput?.addEventListener('input', ()=>{
+  filterText = (filterInput.value||'').toLowerCase().trim();
+  refresh();
+});
+
+/* ==========================
+   TABEL REKAP
+   ========================== */
+function updateBulkUI(){
+  const visibleRows = getVisibleRekap();
+  const allVis = visibleRows.length>0 && visibleRows.every(r=>selectedIds.has(String(r.id)));
+  $('chkAll').checked = allVis;
+  $('deleteSelected').disabled = selectedIds.size===0;
+  $('selInfo').textContent = `${selectedIds.size} baris dipilih`;
+}
+function getVisibleRekap(){
+  if(!filterText) return rekap;
+  return rekap.filter(r=>{
+    const hay = [r.no,r.tanggal,r.nama,r.noba,r.desa,r.kab,r.kec,r.prov].map(v=>String(v||'').toLowerCase());
+    return hay.some(v=>v.includes(filterText));
+  });
+}
+function makeTitleText(r){
+  const bibit = Array.isArray(r.bibit)&&r.bibit.length ? r.bibit.map(b=>`${b.jenis}:${b.jumlah}`).join('; ') : '-';
+  const alamat = [r.desa,r.kec,r.kab,r.prov].filter(Boolean).join(', ');
+  return `No ${r.no} • ${r.tanggal}\n${r.nama||'-'} — ${r.jenis||'-'}\n${alamat||'-'}\nLng ${r.lng||'-'}, Lat ${r.lat||'-'} • Luas ${r.luas||'-'} Ha\nBibit: ${bibit}`;
+}
+function refresh(){
+  const tb=$('tbRekap'); tb.innerHTML='';
+  const rows = getVisibleRekap();
+  rows.forEach(r=>{
+    const tr=document.createElement('tr');
+    const checked = selectedIds.has(String(r.id)) ? 'checked' : '';
+    const hasGeom = r.geom && r.geom.features && r.geom.features.length;
+    const ttip = makeTitleText(r).replaceAll('"','&quot;');
+    tr.innerHTML=`
+      <td><input type="checkbox" class="sel" data-id="${r.id}" ${checked}></td>
+      <td><button class="showgeom" data-id="${r.id}" title="${ttip}" ${hasGeom?'':'disabled'}>🗺️</button></td>
+      <td>${r.no}</td><td>${r.tanggal}</td><td>${r.nama||''}</td>
+      <td>${r.noKtp||''}</td><td>${r.noHp||''}</td><td>${r.alamat||''}</td>
+      <td>${r.jenis||''}</td><td>${r.prov||''}</td><td>${r.kab||''}</td>
+      <td>${r.kec||''}</td><td>${r.desa||''}</td>
+      <td>${r.lng||''}</td><td>${r.lat||''}</td><td>${r.xutm||''}</td><td>${r.yutm||''}</td>
+      <td>${r.luas||''}</td><td>${r.noba||''}</td><td>${Array.isArray(r.bibit)?r.bibit.map(b=>`${b.jenis}:${b.jumlah}`).join('; '):''}</td>
+      <td>
+        <button class="rowedit" data-edit="${r.id}" title="Edit baris ini">✏️</button>
+        <button class="rowdel" data-delrow="${r.id}" title="Hapus baris ini">🗑️</button>
+      </td>`;
+    tb.appendChild(tr);
+  });
+
+  updateBulkUI();
+  renderSavedFromRekap({onlyFiltered:true, fit:false});
+  ensureDrawToolbar();
+}
+document.addEventListener('DOMContentLoaded', refresh);
+
+document.addEventListener('change',e=>{
+  if(e.target.classList && e.target.classList.contains('sel')){
+    const id=e.target.getAttribute('data-id');
+    if(e.target.checked) selectedIds.add(String(id));
+    else selectedIds.delete(String(id));
+    updateBulkUI();
+  }
+});
+$('chkAll').addEventListener('change',e=>{
+  const rows = getVisibleRekap();
+  if(e.target.checked) rows.forEach(r=>selectedIds.add(String(r.id)));
+  else rows.forEach(r=>selectedIds.delete(String(r.id)));
+  refresh();
+});
+$('deleteSelected').addEventListener('click',()=>{
+  if(selectedIds.size===0) return;
+  if(!confirm(`Hapus ${selectedIds.size} baris terpilih?`)) return;
+  for(let i=rekap.length-1;i>=0;i--){
+    if(selectedIds.has(String(rekap[i].id))) rekap.splice(i,1);
+  }
+  selectedIds.clear(); persist(); refresh();
+});
+
+/* ===== Bibit mini-table ===== */
+$('addBibit').onclick=()=>{
+  const j=$('jenisBibit').value.trim(); const n=+($('jumlahBibit').value||0);
+  if(!j||!n){ alert('Isi jenis & jumlah bibit.'); return; }
+  rekapBibit.push({jenis:j,jumlah:n});
+  $('jenisBibit').value=''; $('jumlahBibit').value=100;
+  renderBibit();
+};
+$('clearBibit').onclick=()=>{ rekapBibit=[]; renderBibit(); };
+function renderBibit(){
+  const tb=$('tbBibit'); tb.innerHTML='';
+  rekapBibit.forEach((b,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${b.jenis}</td><td>${b.jumlah}</td><td><button data-del="${i}" title="Hapus baris bibit">Hapus</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+document.addEventListener('click',e=>{
+  const i=e.target.getAttribute?.('data-del'); 
+  if(i!=null){
+    rekapBibit.splice(+i,1);
+    renderBibit();
+  }
+});
+
+/* ===== Bersihkan setelah simpan / batal edit ===== */
+function clearForNext() {
+  try { drawnItems.clearLayers(); } catch (_) {}
+  ['lng','lat','xutm','yutm','luas'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  rekapBibit = []; renderBibit();
+
+  const keep = {prov: provSel.value, kab: kabSel.value, kec: kecSel.value, tgl: $('tanggal').value};
+  document.getElementById('form').reset();
+  provSel.value = keep.prov; provSel.dispatchEvent(new Event('change'));
+  kabSel.value  = keep.kab;  kabSel.dispatchEvent(new Event('change'));
+  kecSel.value  = keep.kec;
+  $('tanggal').value = keep.tgl;
+  $('no').value = nextNo();
+  $('tahun').value = (new Date()).getFullYear();
+}
+
+/* ===== SIMPAN (Tambah/Update) ===== */
+$('save').onclick = () => {
+  if(!$('namaPemohon').value.trim()){ alert('Nama Pemohon wajib diisi.'); return; }
+  if(!$('tanggal').value){ alert('Tanggal wajib diisi.'); return; }
+
+  const payload = {
+    no: $('no').value,
+    tanggal: $('tanggal').value,
+    tahun: $('tahun').value,
+    nama: $('namaPemohon').value.trim(),
+    jenis: $('jenisPenanaman').value,
+    noKtp: $('noKtp').value.trim(),
+    noHp: $('noHp').value.trim(),
+    alamat: $('alamat').value.trim(),
+    prov: provSel.value, kab: kabSel.value, kec: kecSel.value, desa: $('desa').value.trim(),
+    lng: $('lng').value, lat: $('lat').value, xutm: $('xutm').value, yutm: $('yutm').value,
+    luas: $('luas').value,
+    noba: $('noba').value.trim(),
+    bibit: [...rekapBibit],
+    geom: captureGeometry()
+  };
+
+  let saved=null;
+  if(editId){ // update
+    const idx = rekap.findIndex(r=>String(r.id)===String(editId));
+    if(idx>=0){ rekap[idx] = { ...rekap[idx], ...payload }; saved = rekap[idx]; }
+    editId=null; document.body.classList.remove('editing'); $('cancelEdit').style.display='none';
+  }else{ // tambah baru
+    saved = { id: Date.now(), ...payload };
+    rekap.push(saved);
+  }
+
+  persist(); refresh();
+  renderSavedFromRekap({onlyFiltered:true, fit:true});
+  if(saved) focusRecordOnMap(saved.id);
+
+  clearForNext();
+};
+
+$('cancelEdit').onclick=()=>{
+  editId=null;
+  document.body.classList.remove('editing');
+  $('cancelEdit').style.display='none';
+  clearForNext();
+};
+
+/* ===== Aksi tabel: tampilkan peta, hapus, edit ===== */
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.showgeom');
+  if (btn){
+    const id = btn.getAttribute('data-id');
+    const rec = rekap.find(r => String(r.id) === String(id));
+    if (!rec || !rec.geom || !rec.geom.features || !rec.geom.features.length) {
+      alert('Record ini belum memiliki geometri tersimpan.');
+      return;
+    }
+    renderSavedFromRekap({onlyFiltered:true, fit:false});
+    focusRecordOnMap(rec.id);
+    return;
+  }
+  const delBtn = e.target.closest('[data-delrow]');
+  if(delBtn){
+    const id = delBtn.getAttribute('data-delrow');
+    const rec = rekap.find(r=>String(r.id)===String(id));
+    if(rec && confirm(`Hapus baris:\nNo ${rec.no} — ${rec.nama}?`)){
+      const idx = rekap.findIndex(r=>String(r.id)===String(id));
+      if(idx>=0) rekap.splice(idx,1);
+      selectedIds.delete(String(id));
+      persist(); refresh();
+      renderSavedFromRekap({onlyFiltered:true, fit:false});
+    }
+    return;
+  }
+  const editBtn = e.target.closest('[data-edit]');
+  if(editBtn){
+    const id = editBtn.getAttribute('data-edit');
+    const r = rekap.find(x=>String(x.id)===String(id));
+    if(!r) return;
+    editId = r.id;
+    document.body.classList.add('editing');
+    $('cancelEdit').style.display='inline-block';
+
+    $('no').value=r.no; $('tanggal').value=r.tanggal; $('tahun').value=r.tahun;
+    $('namaPemohon').value=r.nama||'';
+    $('jenisPenanaman').value=r.jenis||'Perseorangan';
+    $('noKtp').value=r.noKtp||''; $('noHp').value=r.noHp||'';
+    $('alamat').value=r.alamat||'';
+    provSel.value=r.prov||provSel.value; provSel.dispatchEvent(new Event('change'));
+    kabSel.value=r.kab||kabSel.value; kabSel.dispatchEvent(new Event('change'));
+    kecSel.value=r.kec||kecSel.value;
+    $('desa').value=r.desa||'';
+    $('lng').value=r.lng||''; $('lat').value=r.lat||'';
+    $('xutm').value=r.xutm||''; $('yutm').value=r.yutm||'';
+    $('luas').value=r.luas||''; $('noba').value=r.noba||'';
+    rekapBibit = Array.isArray(r.bibit) ? [...r.bibit] : [];
+    renderBibit();
+
+    renderSavedFromRekap({onlyFiltered:true, fit:false});
+    if(r.geom && r.geom.features && r.geom.features.length) focusRecordOnMap(r.id);
+
+    $('namaPemohon').focus();
+  }
+});
+
+/* ===== Ekspor GeoJSON & CSV ===== */
+$('exportGeoJSON')?.addEventListener('click', ()=>{
+  const feats = [];
+  getVisibleRekap().forEach(r=>{
+    if (r.geom && r.geom.features && r.geom.features.length) {
+      const props = {
+        no:r.no, tanggal:r.tanggal, tahun:r.tahun, nama:r.nama||'',
+        jenis:r.jenis||'', prov:r.prov||'', kab:r.kab||'', kec:r.kec||'',
+        desa:r.desa||'', luas:r.luas||'', noba:r.noba||'',
+        no_ktp:r.noKtp||'', no_hp:r.noHp||''
+      };
+      r.geom.features.forEach(f=>{
+        feats.push({ type:'Feature', geometry:f.geometry, properties: props });
+      });
+    }
+  });
+  if (!feats.length) { alert('Tidak ada geometri pada baris yang terlihat.'); return; }
+  const fc = { type:'FeatureCollection', features:feats };
+  const blob = new Blob([JSON.stringify(fc)], {type:'application/geo+json;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'rekap_lahan.geojson';
+  document.body.appendChild(a); a.click();
+  URL.revokeObjectURL(a.href); a.remove();
+});
+$('clearMap')?.addEventListener('click', ()=>{ try { drawnItems.clearLayers(); } catch {} });
+
+$('exportCSV').addEventListener('click', exportCSV);
+function exportCSV(){
+  const rowsVisible = getVisibleRekap();
+  if (rowsVisible.length === 0) { alert('Tidak ada baris pada tampilan saat ini.'); return; }
+  const sorted = [...rowsVisible].sort((a,b) => new Date(a.tanggal) - new Date(b.tanggal));
+
+  // KTP/HP sebagai TEKS agar Excel tidak mengubah ke E+15
+  const asExcelText = v => (v==null || v==='') ? '' : ("'" + String(v));
+
+  const headers = ['No','Tanggal','Tahun','Nama','No KTP','No HP','Alamat','Jenis',
+    'Prov','Kab','Kec','Desa','Lng','Lat','X','Y','Luas','No BA','Bibit'];
+
+  const rows = sorted.map(r => ([
+    r.no, r.tanggal, r.tahun, r.nama||'',
+    asExcelText(r.noKtp), asExcelText(r.noHp),
+    r.alamat||'', r.jenis||'', r.prov||'', r.kab||'', r.kec||'',
+    r.desa||'', r.lng||'', r.lat||'', r.xutm||'', r.yutm||'',
+    r.luas||'', r.noba||'', (Array.isArray(r.bibit)?r.bibit.map(b=>`${b.jenis}:${b.jumlah}`).join('; '):'')
+  ]));
+
+  const sep = ','; const escCSV = v => `"${String(v ?? '').replaceAll('"','""')}"`;
+  const csvBody = [headers.map(escCSV).join(sep), ...rows.map(r=>r.map(escCSV).join(sep))].join('\r\n');
+  const csv = '\uFEFF' + 'sep=' + sep + '\r\n' + csvBody;
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'rekap_lahan.csv';
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+}
+
+/* Reset form manual */
+$('resetForm').addEventListener('click', ()=> clearForNext());
+
+/* ==========================
+   BATAS DESA: Muat, Cari, Label, Autofill
+   ========================== */
+const desaLayer = L.geoJSON(null, { style: { color:'#000', weight:1, fillOpacity:0.05 }}).addTo(map);
+layerCtrl.addOverlay(desaLayer, 'Batas Desa');
+const desaLabelLayer = L.layerGroup().addTo(map);
+layerCtrl.addOverlay(desaLabelLayer, 'Label Desa (GeoJSON)');
+
+let desaFeatures = [];
+let desaIndex = new Map();
+let desaLabelMarkers = [];
+const LABEL_MIN_ZOOM = 11;
+
+function ambilNamaDesa(props){
+  const keys = ['DESA','KELURAHAN','NAMOBJ','WADMKD','NAM_DESA','NAMA_DESA','DESA_KEL','NM_DESA'];
+  for (const k of keys){ if (props && props[k] && String(props[k]).trim()) return String(props[k]).trim(); }
+  const kandidat = [props?.KELURAHAN, props?.DESA, props?.NAMOBJ].filter(Boolean).join(' ').trim();
+  return kandidat || '(Tanpa Nama)';
+}
+function ambilKec(p){ const keys=['KECAMATAN','WADMKC','NM_KEC','KEC']; for (const k of keys){ if(p?.[k]) return String(p[k]).trim(); } return ''; }
+function ambilKab(p){ const keys=['KABUPATEN','WADMKK','WADMKAB','NM_KAB','KAB']; for (const k of keys){ if(p?.[k]) return String(p[k]).trim(); } return ''; }
+function ambilProv(p){ const keys=['PROVINSI','WADMPR','PROV','NM_PROV']; for (const k of keys){ if(p?.[k]) return String(p[k]).trim(); } return ''; }
+function normNama(s){ return String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
+
+function indexDesa(fc){
+  desaFeatures = [];
+  desaIndex.clear();
+  desaLayer.clearLayers();
+
+  (fc.features||[]).forEach((f,i)=>{
+    if(!f || !f.geometry) return;
+    f.properties = f.properties || {};
+    const nama = ambilNamaDesa(f.properties);
+    const kec  = ambilKec(f.properties);
+    const kab  = ambilKab(f.properties);
+    const prov = ambilProv(f.properties);
+    f.properties.__label = [nama,kec,kab,prov].filter(Boolean).join(' • ');
+    desaFeatures.push(f);
+    const key = normNama(nama);
+    if(!desaIndex.has(key)) desaIndex.set(key, []);
+    desaIndex.get(key).push(i);
+  });
+
+  desaLayer.addData({type:'FeatureCollection', features:desaFeatures});
+  buildDesaLabels();     // siapkan marker label
+  refreshDesaLabels();   // tampilkan sesuai zoom/bounds
+
+  // isi datalist autocomplete
+  const dl = document.getElementById('daftarDesa');
+  if(dl){
+    const unik = Array.from(new Set(desaFeatures.map(f=>f.properties.__label)));
+    dl.innerHTML = unik.sort().map(v=>`<option value="${v}"></option>`).join('');
+  }
+}
+
+function buildDesaLabels(){
+  desaLabelMarkers = (desaFeatures || []).map(f=>{
+    let c;
+    try { c = turf.centerOfMass(f); } catch(_){ c = turf.centroid(f); }
+    const [lng, lat] = c.geometry.coordinates;
+    const nama = (f.properties && (f.properties.__label || ambilNamaDesa(f.properties))) || 'Desa';
+    return L.marker([lat,lng], {
+      icon: L.divIcon({ className:'desa-label', html:`<span>${esc(nama)}</span>`, iconSize:null }),
+      interactive:false
+    });
+  });
+}
+function refreshDesaLabels(){
+  desaLabelLayer.clearLayers();
+  if (map.getZoom() < LABEL_MIN_ZOOM) return;
+  const b = map.getBounds();
+  desaLabelMarkers.forEach(m=>{ if(b.contains(m.getLatLng())) desaLabelLayer.addLayer(m); });
+}
+
+function zoomToDesa(inputValue){
+  if(!inputValue) return;
+  const nm = inputValue.split('•')[0].trim();
+  const key = normNama(nm);
+  const idxs = desaIndex.get(key);
+  if(!idxs || !idxs.length){ alert('Desa tidak ditemukan di layer batas.'); return; }
+  let bounds=null;
+  idxs.forEach(i=>{
+    const g = L.geoJSON(desaFeatures[i]);
+    try{ const b = g.getBounds(); bounds = bounds ? bounds.extend(b) : b; }catch(_){}
+  });
+  if(bounds){ map.fitBounds(bounds, {padding:[20,20]}); }
+}
+
+function adminAt(lat,lng){
+  if(!desaFeatures.length) return null;
+  const pt = turf.point([+lng,+lat]);
+  for (const f of desaFeatures){
+    try{ if (turf.booleanPointInPolygon(pt, f)) {
+      const p = f.properties||{};
+      return { desa:ambilNamaDesa(p), kec:ambilKec(p), kab:ambilKab(p), prov:ambilProv(p) };
+    } }catch(_){}
+  }
+  return null;
+}
+function autofillAdminFromPoint(lat,lng){
+  const adm = adminAt(lat,lng);
+  if(!adm) return;
+  document.getElementById('desa').value = adm.desa || document.getElementById('desa').value;
+  if (adm.prov && Array.from(provSel.options).some(o=>o.value===adm.prov)) { provSel.value=adm.prov; provSel.dispatchEvent(new Event('change')); }
+  if (adm.kab && Array.from(kabSel.options).some(o=>o.value===adm.kab)) { kabSel.value=adm.kab; kabSel.dispatchEvent(new Event('change')); }
+  if (adm.kec && Array.from(kecSel.options).some(o=>o.value===adm.kec)) { kecSel.value=adm.kec; }
+}
+
+map.on('zoomend moveend', refreshDesaLabels);
+
+/* Upload GeoJSON */
+document.getElementById('uploadGeoJSON')?.addEventListener('change', async (e)=>{
+  const file = e.target.files?.[0];
+  if(!file) return;
+  try{
+    const txt = await file.text();
+    const gj  = JSON.parse(txt);
+    indexDesa(gj);
+    alert('Batas desa (GeoJSON) berhasil dimuat.');
+  }catch(err){
+    console.error(err);
+    alert('Gagal memuat GeoJSON.');
+  }
+});
+
+/* Upload SHP.zip via shpjs */
+document.getElementById('uploadShp')?.addEventListener('change', async (e)=>{
+  const file = e.target.files?.[0];
+  if(!file) return;
+  try{
+    const gj = await shp(file);
+    const fc = Array.isArray(gj) ? {type:'FeatureCollection', features: gj.flatMap(x=>x.features||[])} : gj;
+    indexDesa(fc);
+    alert('Batas desa (SHP.zip) berhasil dimuat.');
+  }catch(err){
+    console.error(err);
+    alert('Gagal memuat SHP .zip. Pastikan .shp .dbf .prj ada & bernama sama.');
+  }
+});
+
+/* Cari desa (Enter) */
+document.getElementById('cariDesa')?.addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); zoomToDesa(e.target.value); }
+});
+
+/* (Opsional) Auto-load desa.geojson bila tersedia di /data/desa.geojson */
+(async function autoLoadDesa(){
+  try{
+    const res = await fetch('data/desa.geojson');
+    if(!res.ok) return;
+    const gj = await res.json();
+    indexDesa(gj);
+  }catch(_){}
+})();
+</script>
+</body>
+</html>
+
