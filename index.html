@@ -282,7 +282,17 @@ const map = L.map('map', { renderer: L.canvas(), tap:false, zoomControl:true }).
 const osm  = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19});
 const hot  = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',{attribution:'© OSM/HOT',maxZoom:19});
 const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:19}).addTo(map);
-let fallback=false; osm.once('tileerror',()=>{ if(fallback) return; fallback=true; hot.addTo(map).once('tileerror',()=>{ esri.addTo(map); }); });
+
+const esriLabels = L.tileLayer(
+'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+{
+  attribution:'© Esri Labels',
+  maxZoom:19
+}
+).addTo(map);
+
+let fallback=false;
+osm.once('tileerror',()=>{ if(fallback) return; fallback=true; hot.addTo(map).once('tileerror',()=>{ esri.addTo(map); }); });
 
 /* Layer control (base + overlay) */
 const layerCtrl = L.control.layers({"OSM":osm,"OSM HOT":hot,"Citra Satelit":esri}, {}).addTo(map);
